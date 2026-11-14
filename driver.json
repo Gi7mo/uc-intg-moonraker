@@ -1,0 +1,40 @@
+{
+  "driver_id": "moonraker",
+  "version": "0.1.0",
+  "min_core_api": "0.20.0",
+  "name": { "en": "Moonraker (Klipper)" },
+  "icon": "uc:integration",
+  "description": {
+    "en": "Monitor and control Klipper 3D printers via Moonraker: camera, print progress, temperatures, pause/cancel/emergency stop and macros.",
+    "de": "Klipper-3D-Drucker über Moonraker überwachen und steuern: Kamera, Druckfortschritt, Temperaturen, Pause/Abbruch/Not-Aus und Makros."
+  },
+  "developer": {
+    "name": "Gi7mo",
+    "url": "https://github.com/Gi7mo"
+  },
+  "home_page": "https://github.com/Gi7mo/uc-intg-moonraker",
+  "setup_data_schema": {
+    "title": {
+      "en": "Integration setup",
+      "de": "Integrationssetup"
+    },
+    "settings": [
+      {
+        "id": "info",
+        "label": {
+          "en": "Setup process",
+          "de": "Setup Fortschritt"
+        },
+        "field": {
+          "label": {
+            "value": {
+              "en": "This integration connects to Moonraker (Klipper). Make sure the remote is listed in trusted_clients of moonraker.conf, or have an API key ready.",
+              "de": "Diese Integration verbindet sich mit Moonraker (Klipper). Die Remote muss in trusted_clients der moonraker.conf stehen, oder halte einen API-Key bereit."
+            }
+          }
+        }
+      }
+    ]
+  },
+  "release_date": "2026-11-14"
+}

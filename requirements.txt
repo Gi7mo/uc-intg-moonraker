@@ -1,0 +1,13 @@
+# Core dependencies
+ucapi==0.7.0
+ucapi-framework==1.9.8
+pyee>=9.0
+
+# Moonraker websocket/HTTP client (also used by ucapi-framework)
+aiohttp>=3.9
+
+# Camera snapshot and thumbnail downsizing
+pillow>=10.0
+
+# mDNS discovery of Moonraker instances
+zeroconf>=0.132
