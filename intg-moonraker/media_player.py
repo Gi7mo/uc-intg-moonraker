@@ -12,6 +12,7 @@ progress bar the print progress. Play/pause pauses and resumes, stop cancels
 import logging
 from typing import Any
 
+import camera
 import ucapi
 from const import PrinterConfig
 from device import MoonrakerDevice
@@ -22,6 +23,8 @@ from ucapi_framework import MediaPlayerEntity, create_entity_id
 _LOG = logging.getLogger(__name__)
 
 FEATURES = [
+    # ON_OFF has no printer function, but the remote's media widget needs it to render.
+    media_player.Features.ON_OFF,
     media_player.Features.PLAY_PAUSE,
     media_player.Features.STOP,
     media_player.Features.NEXT,
@@ -43,11 +46,24 @@ class PrinterMediaPlayer(MediaPlayerEntity):
         """Create the print view entity for one printer."""
         self._device = device
         entity_id = create_entity_id(EntityTypes.MEDIA_PLAYER, config.identifier)
+        # The remote takes the supported attributes from the entity definition;
+        # attributes not declared here are not shown when updated later.
         super().__init__(
             entity_id,
             config.name,
             FEATURES,
-            attributes={Attributes.STATE: media_player.States.UNKNOWN},
+            attributes={
+                Attributes.STATE: media_player.States.UNKNOWN,
+                Attributes.MEDIA_TYPE: media_player.MediaContentType.VIDEO,
+                Attributes.MEDIA_TITLE: config.name,
+                Attributes.MEDIA_ARTIST: "",
+                Attributes.MEDIA_ALBUM: "",
+                Attributes.MEDIA_IMAGE_URL: camera.placeholder_artwork(),
+                Attributes.MEDIA_POSITION: 0,
+                Attributes.MEDIA_DURATION: 0,
+                Attributes.SOURCE: "",
+                Attributes.SOURCE_LIST: [],
+            },
             device_class=DeviceClasses.STREAMING_BOX,
             cmd_handler=self.handle_command,
         )
@@ -71,6 +87,8 @@ class PrinterMediaPlayer(MediaPlayerEntity):
         _LOG.info("[%s] Command %s %s", self._device.log_id, cmd_id, params or "")
         try:
             match cmd_id:
+                case media_player.Commands.ON | media_player.Commands.OFF | media_player.Commands.TOGGLE:
+                    pass
                 case media_player.Commands.PLAY_PAUSE:
                     await self._device.pause_resume()
                 case media_player.Commands.STOP:
