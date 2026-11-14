@@ -211,7 +211,13 @@ class MoonrakerDevice(WebSocketDevice):
 
     @property
     def layer_text(self) -> str:
-        """Return ``current / total`` layers."""
+        """Return ``current / total`` layers; Klipper resets the layer when a print ends."""
+        if self.print_state == "complete":
+            total = self._status.get("print_stats", {}).get("info", {}).get("total_layer")
+            total = total or (self._metadata or {}).get("layer_count")
+            return f"{total} / {total}" if total else ""
+        if not self.is_active:
+            return ""
         return printer_state.format_layer(self._status, self._metadata)
 
     def temperature_text(self, obj_name: str) -> str:

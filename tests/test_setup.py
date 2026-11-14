@@ -47,8 +47,7 @@ async def test_add_printer(flow, fake):
         "Extruder (extruder)": True,
         "Bed (heater_bed)": True,
         "Chamber (temperature_sensor chamber)": True,
-        "LOAD_FILAMENT": True,
-        "_HELPER": False,
+        "LOAD_FILAMENT": False,
     }
 
     result = await submit(
@@ -59,7 +58,6 @@ async def test_add_printer(flow, fake):
             "heater_1": "false",
             "heater_2": "true",
             "macro_0": "true",
-            "macro_1": "false",
         },
     )
     assert isinstance(result, SetupComplete)

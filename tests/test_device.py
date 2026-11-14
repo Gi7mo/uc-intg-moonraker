@@ -213,3 +213,12 @@ async def test_api_key_is_sent():
 async def test_probe_unreachable():
     with pytest.raises(ConnectionError):
         await MoonrakerDevice.probe("127.0.0.1", 1)
+
+
+async def test_layer_after_completion(server, device):
+    await server.push_status({"print_stats": {"state": "complete", "info": {"current_layer": 0, "total_layer": 100}}})
+    await wait_for(lambda: device.print_state == "complete")
+    assert device.layer_text == "100 / 100"
+    await server.push_status({"print_stats": {"state": "standby"}})
+    await wait_for(lambda: device.print_state == "standby")
+    assert device.layer_text == ""

@@ -144,8 +144,10 @@ class MoonrakerSetupFlow(BaseSetupFlow[PrinterConfig]):
             return SetupError(IntegrationSetupError.CONNECTION_REFUSED)
 
         existing = self.selected_config_entry
+        selected = existing.macros if existing else []
         self._heaters = info["heaters"]
-        self._macros = info["macros"]
+        # "_" marks internal helper macros in Klipper; keep previously selected ones visible.
+        self._macros = [m for m in info["macros"] if not m.startswith("_") or m in selected]
         if not self._heaters and existing:
             self._heaters = list(existing.heaters)
         if not self._macros and existing:
@@ -198,12 +200,11 @@ class MoonrakerSetupFlow(BaseSetupFlow[PrinterConfig]):
         if self._macros:
             fields.append(_label("macros_info", "Macros as buttons (press twice to run):"))
             for index, macro in enumerate(self._macros):
-                default = macro in device_config.macros if updating else not macro.startswith("_")
                 fields.append(
                     {
                         "id": f"macro_{index}",
                         "label": {"en": macro},
-                        "field": {"checkbox": {"value": default}},
+                        "field": {"checkbox": {"value": macro in device_config.macros}},
                     }
                 )
 

@@ -77,7 +77,8 @@ Optional:
    [releases](../../releases).
 2. In the web configurator, go to *Integrations* → *Add new* → *Install custom* and upload the file.
 3. Start the setup and enter the printer's host, port (default `7125`) and an optional API key.
-4. On the second page, choose temperatures, macros and the camera interval.
+4. On the second page, choose temperatures (default: all), macros and the camera interval.
+   Only user-facing macros are listed (Klipper hides `_`-prefixed helpers), and none is selected by default.
 
 To add more printers, or to change settings later, open the integration →
 *Configure* → *Add a new device* / *Update information for selected device*.
