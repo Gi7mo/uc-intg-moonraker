@@ -56,6 +56,38 @@ class PrinterConfig:
     macros: list[str] = field(default_factory=list)
     """Klipper gcode macros exposed as buttons, e.g. ``LOAD_FILAMENT``."""
 
+    def __setattr__(self, name: str, value) -> None:
+        """
+        Normalize field types on every assignment, including ``__init__``.
+
+        The remote sends every setup value as a string and re-sends earlier
+        fields on later setup pages, which the framework copies onto the config
+        unconverted (``"false"`` would be truthy, ``"7125"`` a string).
+        """
+        if name == "port":
+            value = _to_int(value, DEFAULT_PORT)
+        elif name == "cam_interval":
+            value = _to_int(value, DEFAULT_CAM_INTERVAL)
+        elif name == "ssl":
+            value = to_bool(value)
+        elif name == "api_key":
+            value = str(value or "").strip()
+        super().__setattr__(name, value)
+
+
+def to_bool(value) -> bool:
+    """Interpret setup values: bools or the strings "true"/"false"."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    return bool(value)
+
+
+def _to_int(value, default: int) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
 
 class Commands(StrEnum):
     """Simple commands of the remote entity and the button entities."""

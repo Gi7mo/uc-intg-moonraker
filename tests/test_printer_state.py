@@ -120,3 +120,13 @@ def test_macro_command_limits():
     assert len(long_a) <= 20 and len(long_b) <= 20
     assert long_a != long_b
     assert " " not in macro_command("MY MACRO")
+
+
+def test_stable_round_suppresses_flapping():
+    shown = None
+    for reading in (31.4, 31.6, 31.45, 31.7, 31.5):
+        shown = ps.stable_round(reading, shown)
+        assert shown == 31
+    assert ps.stable_round(31.8, 31) == 32
+    assert ps.stable_round(214.2, 31) == 214
+    assert ps.format_temperature("extruder", {"temperature": 31.6, "target": 0}, current=31) == "31 / 0 °C"

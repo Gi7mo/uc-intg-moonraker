@@ -18,6 +18,7 @@ from const import (
     PrinterConfig,
     heater_label,
     make_identifier,
+    to_bool,
 )
 from device import MoonrakerDevice
 from ucapi import IntegrationSetupError, RequestUserInput, SetupError
@@ -27,13 +28,6 @@ _LOG = logging.getLogger(__name__)
 
 MIN_CAM_INTERVAL = 1
 MAX_CAM_INTERVAL = 60
-
-
-def _checked(value: Any) -> bool:
-    """Checkbox values arrive as bools or as the strings "true"/"false"."""
-    if isinstance(value, str):
-        return value.lower() == "true"
-    return bool(value)
 
 
 def _label(field_id: str, text: str) -> dict[str, Any]:
@@ -132,7 +126,7 @@ class MoonrakerSetupFlow(BaseSetupFlow[PrinterConfig]):
         except ValueError:
             port = DEFAULT_PORT
         api_key = str(input_values.get("api_key", "")).strip()
-        ssl = _checked(input_values.get("ssl", False))
+        ssl = to_bool(input_values.get("ssl", False))
 
         try:
             info = await MoonrakerDevice.probe(host, port, api_key, ssl)
@@ -229,10 +223,10 @@ class MoonrakerSetupFlow(BaseSetupFlow[PrinterConfig]):
             interval = DEFAULT_CAM_INTERVAL
         config.cam_interval = max(MIN_CAM_INTERVAL, min(MAX_CAM_INTERVAL, interval))
         config.heaters = [
-            h for i, h in enumerate(self._heaters) if _checked(values.get(f"heater_{i}"))
+            h for i, h in enumerate(self._heaters) if to_bool(values.get(f"heater_{i}"))
         ]
         config.macros = [
-            m for i, m in enumerate(self._macros) if _checked(values.get(f"macro_{i}"))
+            m for i, m in enumerate(self._macros) if to_bool(values.get(f"macro_{i}"))
         ]
         _LOG.info(
             "Printer %s: heaters=%s macros=%s camera every %ss",

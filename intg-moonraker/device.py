@@ -79,6 +79,7 @@ class MoonrakerDevice(WebSocketDevice):
         self._webcams: list[Webcam] = []
         self._cam_index = 0
         self._camera_image: str | None = None
+        self._shown_temps: dict[str, int] = {}
 
         self.confirm = ConfirmGuard(self.push_update)
 
@@ -222,7 +223,14 @@ class MoonrakerDevice(WebSocketDevice):
 
     def temperature_text(self, obj_name: str) -> str:
         """Return the formatted temperature of a heater or sensor."""
-        return printer_state.format_temperature(obj_name, self._status.get(obj_name))
+        status = self._status.get(obj_name)
+        current = None
+        if status and status.get("temperature") is not None:
+            current = printer_state.stable_round(
+                status["temperature"], self._shown_temps.get(obj_name)
+            )
+            self._shown_temps[obj_name] = current
+        return printer_state.format_temperature(obj_name, status, current)
 
     def has_macro(self, macro: str) -> bool:
         """Return True if the macro exists in the current Klipper config."""

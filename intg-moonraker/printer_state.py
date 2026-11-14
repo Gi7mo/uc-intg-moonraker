@@ -14,6 +14,8 @@ from const import has_target
 from ucapi import media_player
 
 ACTIVE_STATES = ("printing", "paused")
+TEMP_HYSTERESIS = 0.75
+"""Degrees a reading must move away from the displayed value before it changes."""
 
 _STATE_LABELS = {
     "standby": "Ready",
@@ -105,14 +107,33 @@ def format_duration(seconds: float | None) -> str:
     return f"{secs}s"
 
 
-def format_temperature(obj_name: str, obj_status: dict[str, Any] | None) -> str:
-    """Format a heater as ``215 / 220 °C`` or a passive sensor as ``45 °C``."""
+def format_temperature(
+    obj_name: str, obj_status: dict[str, Any] | None, current: int | None = None
+) -> str:
+    """
+    Format a heater as ``215 / 220 °C`` or a passive sensor as ``45 °C``.
+
+    :param current: displayed current temperature, overriding plain rounding
+    """
     if not obj_status or obj_status.get("temperature") is None:
         return "–"
-    current = round(obj_status["temperature"])
+    if current is None:
+        current = round(obj_status["temperature"])
     if has_target(obj_name) and "target" in obj_status:
         return f"{current} / {round(obj_status['target'] or 0)} °C"
     return f"{current} °C"
+
+
+def stable_round(value: float, shown: int | None, hysteresis: float = TEMP_HYSTERESIS) -> int:
+    """
+    Round ``value`` but keep ``shown`` until the value moved far enough away.
+
+    Prevents a reading hovering around x.5 from flipping the display (and
+    sending an update to the remote) several times per second.
+    """
+    if shown is None or abs(value - shown) >= hysteresis:
+        return round(value)
+    return shown
 
 
 def format_layer(status: dict[str, Any], metadata: dict[str, Any] | None) -> str:

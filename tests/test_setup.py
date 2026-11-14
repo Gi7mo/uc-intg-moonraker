@@ -135,3 +135,24 @@ async def test_discovery_input_mapping(flow):
     found = DiscoveredDevice("x", "voron", "10.0.0.5", extra_data={"port": 7126})
     values = await flow.prepare_input_from_discovery(found, {"choice": "x", "api_key": "k"})
     assert values == {"name": "voron", "host": "10.0.0.5", "port": 7126, "api_key": "k", "ssl": False}
+
+
+async def test_remote_resends_all_fields_as_strings(flow, fake):
+    """Regression: the remote re-sends page 1 fields as strings on page 2 ("ssl": "false")."""
+    flow._add_mode = True
+    flow._setup_step = SetupSteps.MANUAL_ENTRY
+    page1 = {"api_key": "", "host": "127.0.0.1", "name": "2.4", "port": str(fake.port), "ssl": "false"}
+    await submit(flow, page1)
+    result = await submit(flow, {**page1, "cam_interval": "5", "heater_0": "true", "macro_0": "false"})
+    assert isinstance(result, SetupComplete)
+    saved = flow.config.get(f"127_0_0_1_{fake.port}")
+    assert saved.ssl is False
+    assert saved.port == fake.port
+    assert saved.cam_interval == 5
+
+
+def test_config_normalizes_stored_strings():
+    cfg = PrinterConfig("x", "X", "h", port="7125", ssl="false", cam_interval="7", api_key=" k ")
+    assert (cfg.port, cfg.ssl, cfg.cam_interval, cfg.api_key) == (7125, False, 7, "k")
+    cfg.ssl = "true"
+    assert cfg.ssl is True
