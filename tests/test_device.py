@@ -76,8 +76,9 @@ async def test_media_player_attributes_and_camera(server, device):
     assert attrs.MEDIA_ALBUM == "10 / 100"
     assert attrs.MEDIA_IMAGE_URL.startswith("data:image/jpeg;base64,")
     assert attrs.MEDIA_IMAGE_URL == device._camera_image
-    assert attrs.MEDIA_POSITION == 600
-    assert attrs.MEDIA_DURATION == 2400
+    # elapsed includes heating and pauses, like the web UIs show it
+    assert attrs.MEDIA_POSITION == 660
+    assert attrs.MEDIA_DURATION == 660 + 1800
     assert attrs.SOURCE == "Nozzle"
     assert attrs.SOURCE_LIST == ["Nozzle", "Room"]
 
@@ -91,7 +92,7 @@ async def test_status_updates_and_idle_artwork(server, device):
     await wait_for(lambda: device._camera_image is not None)
     await server.push_status(
         {
-            "print_stats": {"state": "complete", "print_duration": 2350.0},
+            "print_stats": {"state": "complete", "print_duration": 2350.0, "total_duration": 2350.0},
             "extruder": {"temperature": 120.0, "target": 0},
         }
     )

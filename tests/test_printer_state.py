@@ -12,6 +12,14 @@ def test_progress_uses_gcode_byte_range():
     assert ps.compute_progress(status, metadata) == pytest.approx(0.5)
 
 
+def test_progress_prefers_slicer_m73():
+    status = {"display_status": {"progress": 0.21}, "virtual_sdcard": {"file_position": 141149}}
+    metadata = {"gcode_start_byte": 15681, "gcode_end_byte": 5638863}
+    assert ps.compute_progress(status, metadata) == pytest.approx(0.21)
+    status["display_status"]["progress"] = 0
+    assert ps.compute_progress(status, metadata) == pytest.approx(0.0223, abs=1e-3)
+
+
 def test_progress_falls_back_to_sdcard_and_clamps():
     assert ps.compute_progress({"virtual_sdcard": {"progress": 0.3}}, None) == 0.3
     assert ps.compute_progress({"virtual_sdcard": {"progress": 1.7}}, None) == 1.0

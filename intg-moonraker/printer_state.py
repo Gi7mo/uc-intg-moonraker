@@ -38,10 +38,14 @@ def compute_progress(status: dict[str, Any], metadata: dict[str, Any] | None) ->
     """
     Return the print progress as a fraction between 0 and 1.
 
-    Uses the gcode byte range from the file metadata when available (same
-    approach as Mainsail/Fluidd, which ignores the slicer header and footer),
-    otherwise falls back to ``virtual_sdcard.progress``.
+    Prefers the slicer's progress (``M73``, reported as ``display_status.progress``):
+    it is time based, while the file position lags badly in slow first layers.
+    Otherwise uses the gcode byte range from the file metadata (ignoring the
+    slicer header and footer), then ``virtual_sdcard.progress``.
     """
+    slicer = status.get("display_status", {}).get("progress")
+    if slicer:
+        return _clamp(slicer)
     sdcard = status.get("virtual_sdcard", {})
     position = sdcard.get("file_position")
     if metadata and position:

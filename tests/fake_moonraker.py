@@ -45,6 +45,7 @@ class FakeMoonraker:
                 "state": "printing",
                 "filename": "parts/benchy.gcode",
                 "print_duration": 600.0,
+                "total_duration": 662.0,
                 "info": {"current_layer": 10, "total_layer": 100},
             },
             "virtual_sdcard": {"progress": 0.25, "file_position": 1100, "is_active": True},

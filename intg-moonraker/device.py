@@ -156,14 +156,22 @@ class MoonrakerDevice(WebSocketDevice):
         return self._status.get("print_stats", {}).get("print_duration") or 0.0
 
     @property
+    def total_duration(self) -> float:
+        """Return the elapsed time since the print started in seconds (including pauses)."""
+        stats = self._status.get("print_stats", {})
+        return stats.get("total_duration") or stats.get("print_duration") or 0.0
+
+    @property
     def remaining(self) -> float | None:
         """Return the estimated remaining time in seconds, None if unknown."""
         if not self.is_active:
             return None
         estimate = (self._metadata or {}).get("estimated_time")
-        return printer_state.compute_remaining(
+        remaining = printer_state.compute_remaining(
             self.print_duration, self.progress, estimate
         )
+        # Whole minutes, so the summary and the progress bar show the same time.
+        return None if remaining is None else round(remaining / 60) * 60
 
     @property
     def webcams(self) -> list[Webcam]:
@@ -243,13 +251,12 @@ class MoonrakerDevice(WebSocketDevice):
         active = self.is_active
         position = duration = 0
         if active:
-            position = int(self.print_duration) // 5 * 5
+            position = int(self.total_duration) // 5 * 5
             remaining = self.remaining
             if remaining is not None:
-                duration = int(self.print_duration + remaining) // 60 * 60
-                duration = max(duration, position)
+                duration = position + int(remaining)
         elif self.print_state == "complete":
-            position = duration = int(self.print_duration)
+            position = duration = int(self.total_duration)
 
         # Like other media players, report when the position was last valid.
         if position != self._position_stamp[0]:
@@ -419,6 +426,7 @@ class MoonrakerDevice(WebSocketDevice):
             "webhooks": ["state", "state_message"],
             "print_stats": None,
             "virtual_sdcard": ["progress", "file_position", "is_active"],
+            "display_status": ["progress"],
         }
         for heater in self.config.heaters:
             if heater in objects:
