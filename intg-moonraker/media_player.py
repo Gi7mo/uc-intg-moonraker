@@ -23,8 +23,6 @@ from ucapi_framework import MediaPlayerEntity, create_entity_id
 _LOG = logging.getLogger(__name__)
 
 FEATURES = [
-    # ON_OFF has no printer function, but the remote's media widget needs it to render.
-    media_player.Features.ON_OFF,
     media_player.Features.PLAY_PAUSE,
     media_player.Features.STOP,
     media_player.Features.NEXT,
@@ -66,6 +64,10 @@ class PrinterMediaPlayer(MediaPlayerEntity):
                 Attributes.SOURCE_LIST: [],
             },
             device_class=DeviceClasses.TV,
+            description={
+                "en": f"Camera and print progress of {config.name}",
+                "de": f"Kamera und Druckfortschritt von {config.name}",
+            },
             cmd_handler=self.handle_command,
         )
         self.subscribe_to_device(device)
@@ -88,8 +90,6 @@ class PrinterMediaPlayer(MediaPlayerEntity):
         _LOG.info("[%s] Command %s %s", self._device.log_id, cmd_id, params or "")
         try:
             match cmd_id:
-                case media_player.Commands.ON | media_player.Commands.OFF | media_player.Commands.TOGGLE:
-                    pass
                 case media_player.Commands.PLAY_PAUSE:
                     await self._device.pause_resume()
                 case media_player.Commands.STOP:

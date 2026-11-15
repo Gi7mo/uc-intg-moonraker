@@ -44,6 +44,9 @@ in the web configurator. As a result:
   [recommended layout](#recommended-activity-layout) below gets close.
 - Temperature sensors show text (`215 / 220 °C`), so the remote's automatic °C/°F
   conversion does not apply.
+- The print view needs remote UI **0.73.4 or newer** (Settings → About). Older UI versions
+  leave a media widget empty if its media player hasn't been loaded elsewhere yet, e.g. by
+  opening it once from the entity list.
 
 ## Moonraker configuration
 
