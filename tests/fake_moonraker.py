@@ -63,8 +63,10 @@ class FakeMoonraker:
                 {"width": 300, "height": 300, "relative_path": ".thumbs/benchy-300x300.png"},
             ],
         }
+        self.metadata_fails = 0
         self.calls: list[tuple[str, dict]] = []
         self.snapshot_requests = 0
+        self.snapshot_api_keys: list[str | None] = []
         self.thumbnail_requests: list[str] = []
         self.connections = 0
         self.subscribed = asyncio.Event()
@@ -131,9 +133,7 @@ class FakeMoonraker:
             try:
                 result = self._rpc(method, params)
             except KeyError as err:
-                await ws.send_json(
-                    {"jsonrpc": "2.0", "id": req["id"], "error": {"code": 404, "message": str(err)}}
-                )
+                await ws.send_json({"jsonrpc": "2.0", "id": req["id"], "error": {"code": 404, "message": str(err)}})
                 continue
             await ws.send_json({"jsonrpc": "2.0", "id": req["id"], "result": result})
             if method == "printer.objects.subscribe":
@@ -164,6 +164,9 @@ class FakeMoonraker:
                     "status": {k: dict(self.status[k]) for k in params["objects"] if k in self.status},
                 }
             case "server.files.metadata":
+                if self.metadata_fails:
+                    self.metadata_fails -= 1
+                    raise KeyError("metadata not ready")
                 if params["filename"] != "parts/benchy.gcode":
                     raise KeyError(params["filename"])
                 return self.metadata
@@ -172,6 +175,7 @@ class FakeMoonraker:
 
     async def _snapshot(self, _request: web.Request) -> web.Response:
         self.snapshot_requests += 1
+        self.snapshot_api_keys.append(_request.headers.get("X-Api-Key"))
         return web.Response(body=jpeg_bytes(), content_type="image/jpeg")
 
     async def _thumbnail(self, request: web.Request) -> web.Response:

@@ -16,13 +16,15 @@ DEFAULT_PORT = 7125
 DEFAULT_CAM_INTERVAL = 5
 CONFIRM_WINDOW = 3.0
 """Seconds within which a second press confirms a guarded action."""
+CONFIRM_MIN_GAP = 0.4
+"""Repeats faster than this (key repeat, command sequences) do not confirm."""
 
-_HEATER_RE = re.compile(
-    r"^(extruder\d*|heater_bed|(heater_generic|temperature_sensor|temperature_fan) \S+)$"
-)
+_HEATER_RE = re.compile(r"^(extruder\d*|heater_bed|(heater_generic|temperature_sensor|temperature_fan) \S+)$")
 """Klipper object names that carry a temperature (not ``extruder_stepper``)."""
 
 MACRO_PREFIX = "gcode_macro "
+MACRO_NAME = re.compile(r"[A-Za-z0-9_]+")
+"""Macro names that are safe to send as a gcode script."""
 
 
 @dataclass

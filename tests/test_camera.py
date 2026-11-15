@@ -3,10 +3,12 @@
 import base64
 import io
 
+import aiohttp
 import camera
+import pytest
 from camera import Webcam
-from fake_moonraker import jpeg_bytes, png_bytes
-from PIL import Image
+from fake_moonraker import FakeMoonraker, jpeg_bytes, png_bytes
+from PIL import Image, UnidentifiedImageError
 
 
 def decode(uri: str) -> Image.Image:
@@ -54,3 +56,28 @@ def test_resolve_snapshot_url():
         == "http://printer/webcam/?action=snapshot"
     )
     assert camera.resolve_snapshot_url("webcam/snap", "printer", True) == "https://printer/webcam/snap"
+
+
+def test_rejects_huge_and_unknown_images(monkeypatch):
+    monkeypatch.setattr(camera, "MAX_PIXELS", 100 * 100)
+    with pytest.raises(ValueError):
+        camera.encode_artwork(jpeg_bytes((200, 200)))
+    with pytest.raises(UnidentifiedImageError):
+        camera.encode_artwork(b"%PDF-1.4 not an image")
+
+
+def test_redact_url():
+    assert camera.redact_url("http://user:pw@cam.local:8080/snap?x=1") == "http://cam.local:8080/snap?x=1"
+    assert camera.redact_url("http://cam.local/snap") == "http://cam.local/snap"
+
+
+async def test_download_size_limit(monkeypatch):
+    fake = FakeMoonraker()
+    await fake.start()
+    monkeypatch.setattr(camera, "MAX_DOWNLOAD", 1000)
+    try:
+        async with aiohttp.ClientSession() as session:
+            with pytest.raises(ValueError):
+                await camera.fetch_image(session, f"{fake.base_url}/snapshot")
+    finally:
+        await fake.stop()

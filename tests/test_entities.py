@@ -5,7 +5,7 @@ import asyncio
 import pytest
 import ucapi
 from button import create_buttons
-from const import Commands, PrinterConfig, macro_command
+from const import CONFIRM_MIN_GAP, Commands, PrinterConfig, macro_command
 from device import MoonrakerDevice
 from driver import MoonrakerDriver
 from fake_moonraker import FakeMoonraker
@@ -92,20 +92,13 @@ async def test_entities_follow_device_state(setup):
     assert attrs(driver, "sensor.voron_7125.remaining")[sensor.Attributes.VALUE] == "30m"
     assert attrs(driver, "sensor.voron_7125.layer")[sensor.Attributes.VALUE] == "10 / 100"
     assert attrs(driver, "sensor.voron_7125.temp_extruder")[sensor.Attributes.VALUE] == "215 / 215 °C"
-    assert (
-        attrs(driver, "sensor.voron_7125.temp_temperature_sensor_chamber")[sensor.Attributes.VALUE] == "35 °C"
-    )
+    assert attrs(driver, "sensor.voron_7125.temp_temperature_sensor_chamber")[sensor.Attributes.VALUE] == "35 °C"
     assert attrs(driver, "remote.voron_7125")[remote.Attributes.STATE] == remote.States.ON
     assert attrs(driver, "button.voron_7125.cancel")[button.Attributes.STATE] == button.States.AVAILABLE
-    assert (
-        attrs(driver, "button.voron_7125.macro_missing_macro")[button.Attributes.STATE]
-        == button.States.UNAVAILABLE
-    )
+    assert attrs(driver, "button.voron_7125.macro_missing_macro")[button.Attributes.STATE] == button.States.UNAVAILABLE
 
     await fake.push_status({"extruder": {"temperature": 230.2, "target": 240}})
-    await wait_for(
-        lambda: attrs(driver, "sensor.voron_7125.temp_extruder")[sensor.Attributes.VALUE] == "230 / 240 °C"
-    )
+    await wait_for(lambda: attrs(driver, "sensor.voron_7125.temp_extruder")[sensor.Attributes.VALUE] == "230 / 240 °C")
 
 
 async def test_refresh_resends_unchanged_state(setup, monkeypatch):
@@ -136,12 +129,9 @@ async def test_commands_through_entities(setup):
 
     mp = entities["media_player.voron_7125"]
     assert await mp.command(media_player.Commands.STOP, websocket=None) == ucapi.StatusCodes.OK
-    await wait_for(
-        lambda: "again to confirm" in attrs(driver, "sensor.voron_7125.status")[sensor.Attributes.VALUE]
-    )
-    assert (
-        "again to confirm" in attrs(driver, "media_player.voron_7125")[media_player.Attributes.MEDIA_ARTIST]
-    )
+    await wait_for(lambda: "again to confirm" in attrs(driver, "sensor.voron_7125.status")[sensor.Attributes.VALUE])
+    assert "again to confirm" in attrs(driver, "media_player.voron_7125")[media_player.Attributes.MEDIA_ARTIST]
+    await asyncio.sleep(CONFIRM_MIN_GAP)
     await mp.command(media_player.Commands.STOP, websocket=None)
     await wait_for(lambda: ("printer.print.cancel", {}) in fake.calls)
 
@@ -151,14 +141,18 @@ async def test_commands_through_entities(setup):
             remote.Commands.SEND_CMD, {"command": macro_command("LOAD_FILAMENT")}, websocket=None
         )
         assert status == ucapi.StatusCodes.OK
+        await asyncio.sleep(CONFIRM_MIN_GAP)
     await wait_for(lambda: ("printer.gcode.script", {"script": "LOAD_FILAMENT"}) in fake.calls)
     assert (
         await rem.command(remote.Commands.SEND_CMD, {"command": "NOPE"}, websocket=None)
         == ucapi.StatusCodes.BAD_REQUEST
     )
-    await rem.command(
-        remote.Commands.SEND_CMD_SEQUENCE, {"sequence": [Commands.EMERGENCY_STOP] * 2}, websocket=None
-    )
+    # one command sequence cannot confirm on its own, a separate second press does
+    await rem.command(remote.Commands.SEND_CMD_SEQUENCE, {"sequence": [Commands.EMERGENCY_STOP] * 2}, websocket=None)
+    await asyncio.sleep(0.1)
+    assert ("printer.emergency_stop", {}) not in fake.calls
+    await asyncio.sleep(CONFIRM_MIN_GAP)
+    await rem.command(remote.Commands.SEND_CMD, {"command": Commands.EMERGENCY_STOP}, websocket=None)
     await wait_for(lambda: ("printer.emergency_stop", {}) in fake.calls)
 
     btn = entities["button.voron_7125.pause_resume"]
@@ -170,9 +164,7 @@ async def test_disconnected_entities(setup):
     _, _, entities, _ = setup
     mp = entities["media_player.voron_7125"]
     btn = entities["button.voron_7125.emergency_stop"]
-    assert (
-        await mp.command(media_player.Commands.STOP, websocket=None) == ucapi.StatusCodes.SERVICE_UNAVAILABLE
-    )
+    assert await mp.command(media_player.Commands.STOP, websocket=None) == ucapi.StatusCodes.SERVICE_UNAVAILABLE
     assert await btn.command(button.Commands.PUSH, websocket=None) == ucapi.StatusCodes.SERVICE_UNAVAILABLE
 
 
@@ -192,3 +184,19 @@ def test_remote_simple_commands_are_valid(setup):
     commands = entities["remote.voron_7125"].options["simple_commands"]
     assert "EMERGENCY_STOP" in commands and "M_LOAD_FILAMENT" in commands
     assert all(len(c) <= 20 and " " not in c for c in commands)
+
+
+async def test_media_player_camera_commands(setup):
+    fake, device, entities, _ = setup
+    await device.connect()
+    await asyncio.wait_for(fake.subscribed.wait(), 3)
+    await wait_for(lambda: device.current_webcam is not None)
+    mp = entities["media_player.voron_7125"]
+    assert await mp.command(media_player.Commands.NEXT, websocket=None) == ucapi.StatusCodes.OK
+    assert device.current_webcam.name == "Room"
+    assert await mp.command(media_player.Commands.PREVIOUS, websocket=None) == ucapi.StatusCodes.OK
+    assert device.current_webcam.name == "Nozzle"
+    status = await mp.command(media_player.Commands.SELECT_SOURCE, {"source": "Room"}, websocket=None)
+    assert status == ucapi.StatusCodes.OK
+    assert device.current_webcam.name == "Room"
+    assert await mp.command(media_player.Commands.VOLUME_UP, websocket=None) == ucapi.StatusCodes.NOT_IMPLEMENTED

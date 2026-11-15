@@ -53,16 +53,10 @@ class PrinterButton(ButtonEntity):
     async def sync_state(self, force: bool = False) -> None:
         """Mark the button unavailable while disconnected or its macro is missing."""
         available = self._device.is_connected and (
-            self._macro is None
-            or self._device.klippy_state != "ready"
-            or self._device.has_macro(self._macro)
+            self._macro is None or self._device.klippy_state != "ready" or self._device.has_macro(self._macro)
         )
         self.update(
-            {
-                button.Attributes.STATE: (
-                    button.States.AVAILABLE if available else button.States.UNAVAILABLE
-                )
-            },
+            {button.Attributes.STATE: (button.States.AVAILABLE if available else button.States.UNAVAILABLE)},
             force=force,
         )
 
@@ -88,12 +82,7 @@ class PrinterButton(ButtonEntity):
 
 def create_buttons(config: PrinterConfig, device: MoonrakerDevice) -> list[PrinterButton]:
     """Create the control buttons and one button per selected macro."""
-    buttons = [
-        PrinterButton(config, device, key, name, command)
-        for command, key, name in CONTROL_BUTTONS
-    ]
+    buttons = [PrinterButton(config, device, key, name, command) for command, key, name in CONTROL_BUTTONS]
     for macro in config.macros:
-        buttons.append(
-            PrinterButton(config, device, f"macro_{slug(macro)}", macro, macro=macro)
-        )
+        buttons.append(PrinterButton(config, device, f"macro_{slug(macro)}", macro, macro=macro))
     return buttons

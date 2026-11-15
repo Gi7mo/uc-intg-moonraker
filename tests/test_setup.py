@@ -40,9 +40,7 @@ async def test_add_printer(flow, fake):
     assert isinstance(screen, RequestUserInput)
     fields = field_ids(screen)
     assert fields["cam_interval"]["field"]["number"]["value"] == 5
-    labels = {
-        f["label"]["en"]: f["field"]["checkbox"]["value"] for f in screen.settings if "checkbox" in f["field"]
-    }
+    labels = {f["label"]["en"]: f["field"]["checkbox"]["value"] for f in screen.settings if "checkbox" in f["field"]}
     assert labels == {
         "Extruder (extruder)": True,
         "Bed (heater_bed)": True,
@@ -91,9 +89,7 @@ async def test_update_keeps_identifier_and_prefills(flow, fake):
     screen = await submit(
         flow, {"name": "Voron 2.4", "host": "127.0.0.1", "port": fake.port, "api_key": "", "ssl": False}
     )
-    checks = {
-        f["label"]["en"]: f["field"]["checkbox"]["value"] for f in screen.settings if "checkbox" in f["field"]
-    }
+    checks = {f["label"]["en"]: f["field"]["checkbox"]["value"] for f in screen.settings if "checkbox" in f["field"]}
     assert checks["Bed (heater_bed)"] is True
     assert checks["Extruder (extruder)"] is False
     assert checks["_HELPER"] is True
@@ -149,6 +145,18 @@ async def test_remote_resends_all_fields_as_strings(flow, fake):
     assert saved.ssl is False
     assert saved.port == fake.port
     assert saved.cam_interval == 5
+
+
+async def test_empty_name_survives_second_page(flow, fake):
+    """Regression: page 2 resends ``name: ""`` and the raw host, which must not overwrite page 1."""
+    flow._add_mode = True
+    flow._setup_step = SetupSteps.MANUAL_ENTRY
+    page1 = {"api_key": "", "host": " 127.0.0.1 ", "name": "", "port": str(fake.port), "ssl": "false"}
+    await submit(flow, page1)
+    result = await submit(flow, {**page1, "cam_interval": "5"})
+    assert isinstance(result, SetupComplete)
+    saved = flow.config.get(f"127_0_0_1_{fake.port}")
+    assert (saved.name, saved.host) == ("voron", "127.0.0.1")
 
 
 def test_config_normalizes_stored_strings():

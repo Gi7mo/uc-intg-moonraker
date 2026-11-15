@@ -14,7 +14,7 @@ import io
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import aiohttp
 from PIL import Image, ImageDraw, ImageOps
@@ -26,6 +26,11 @@ MAX_SIZE = 420
 
 JPEG_QUALITY = 70
 FETCH_TIMEOUT = aiohttp.ClientTimeout(total=8)
+MAX_DOWNLOAD = 10 * 1024 * 1024
+"""Largest snapshot or thumbnail download in bytes."""
+MAX_PIXELS = 40_000_000
+"""Largest decoded image (8K is 33 MP), guards against decompression bombs."""
+FORMATS = ("JPEG", "PNG", "WEBP", "BMP", "GIF")
 
 
 @dataclass
@@ -66,13 +71,33 @@ def resolve_snapshot_url(snapshot_url: str, host: str, ssl: bool) -> str:
     return urljoin(base, snapshot_url)
 
 
-async def fetch_image(
-    session: aiohttp.ClientSession, url: str, headers: dict[str, str] | None = None
-) -> bytes:
-    """Download an image and return the raw bytes."""
+async def fetch_image(session: aiohttp.ClientSession, url: str, headers: dict[str, str] | None = None) -> bytes:
+    """
+    Download an image and return the raw bytes.
+
+    :raises ValueError: if the response is larger than :data:`MAX_DOWNLOAD`
+    """
     async with session.get(url, headers=headers, timeout=FETCH_TIMEOUT) as resp:
         resp.raise_for_status()
-        return await resp.read()
+        if (resp.content_length or 0) > MAX_DOWNLOAD:
+            raise ValueError(f"Image too large: {resp.content_length} bytes")
+        raw = bytearray()
+        async for chunk in resp.content.iter_chunked(64 * 1024):
+            raw += chunk
+            if len(raw) > MAX_DOWNLOAD:
+                raise ValueError("Image too large")
+        return bytes(raw)
+
+
+def redact_url(url: str) -> str:
+    """Remove user and password from a URL for logging."""
+    parts = urlsplit(url)
+    if not parts.username and not parts.password:
+        return url
+    netloc = parts.hostname or ""
+    if parts.port:
+        netloc += f":{parts.port}"
+    return urlunsplit(parts._replace(netloc=netloc))
 
 
 async def to_artwork(raw: bytes, webcam: Webcam | None = None) -> str:
@@ -81,8 +106,12 @@ async def to_artwork(raw: bytes, webcam: Webcam | None = None) -> str:
 
 
 def encode_artwork(raw: bytes, webcam: Webcam | None = None) -> str:
-    """Synchronous variant of :func:`to_artwork`."""
-    with Image.open(io.BytesIO(raw)) as img:
+    """Convert synchronously, see :func:`to_artwork`."""
+    with Image.open(io.BytesIO(raw), formats=FORMATS) as img:
+        if img.width * img.height > MAX_PIXELS:
+            raise ValueError(f"Image too large: {img.width}x{img.height}")
+        # Let the JPEG decoder downscale while decoding instead of decoding the full image.
+        img.draft("RGB", (MAX_SIZE * 2, MAX_SIZE * 2))
         img = ImageOps.exif_transpose(img)
         if webcam:
             if webcam.flip_horizontal:

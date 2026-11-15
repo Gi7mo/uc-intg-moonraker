@@ -32,9 +32,7 @@ class StatusSensor:
 STATUS_SENSORS = [
     StatusSensor("status", "Status", lambda d: d.status_text),
     StatusSensor("progress", "Progress", lambda d: round(d.progress * 100), "%"),
-    StatusSensor(
-        "remaining", "Time remaining", lambda d: printer_state.format_duration(d.remaining)
-    ),
+    StatusSensor("remaining", "Time remaining", lambda d: printer_state.format_duration(d.remaining)),
     StatusSensor("file", "File", lambda d: os.path.basename(d.filename)),
     StatusSensor("layer", "Layer", lambda d: d.layer_text),
     StatusSensor("finish", "Finish time", lambda d: d.finish_time),
@@ -86,9 +84,7 @@ class PrinterSensor(SensorEntity):
 
 def create_sensors(config: PrinterConfig, device: MoonrakerDevice) -> list[PrinterSensor]:
     """Create the status sensors and the selected temperature sensors."""
-    sensors = [
-        PrinterSensor(config, device, s.key, s.name, s.value, s.unit) for s in STATUS_SENSORS
-    ]
+    sensors = [PrinterSensor(config, device, s.key, s.name, s.value, s.unit) for s in STATUS_SENSORS]
     for heater in config.heaters:
         sensors.append(
             PrinterSensor(

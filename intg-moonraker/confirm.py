@@ -4,7 +4,8 @@ Double-press confirmation for destructive actions.
 The remote has no confirmation dialog, so dangerous actions (emergency stop,
 cancel, firmware restart, macros) must be pressed twice within a short window.
 The first press arms the action and exposes a hint text; the second press
-within the window executes it.
+within the window executes it. Repeats faster than a human double press
+(held keys, the same command twice in one command sequence) are ignored.
 
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
@@ -13,7 +14,7 @@ import asyncio
 import time
 from collections.abc import Callable
 
-from const import CONFIRM_WINDOW
+from const import CONFIRM_MIN_GAP, CONFIRM_WINDOW
 
 
 class ConfirmGuard:
@@ -23,6 +24,7 @@ class ConfirmGuard:
         self,
         on_change: Callable[[], None],
         window: float = CONFIRM_WINDOW,
+        min_gap: float = CONFIRM_MIN_GAP,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """
@@ -30,10 +32,12 @@ class ConfirmGuard:
 
         :param on_change: called whenever the hint text changes (arm, confirm, expire)
         :param window: seconds within which the second press must follow
+        :param min_gap: seconds the second press must at least be apart from the first
         :param clock: monotonic time source, injectable for tests
         """
         self._on_change = on_change
         self._window = window
+        self._min_gap = min_gap
         self._clock = clock
         self._key: str | None = None
         self._label = ""
@@ -54,6 +58,8 @@ class ConfirmGuard:
         :return: True if this press confirms the action and it should run now
         """
         now = self._clock()
+        if self._key == key and now - self._armed_at < self._min_gap:
+            return False
         if self._key == key and now - self._armed_at <= self._window:
             self._reset()
             return True

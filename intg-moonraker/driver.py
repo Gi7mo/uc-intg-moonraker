@@ -55,7 +55,7 @@ class MoonrakerDriver(BaseIntegrationDriver):
 async def main():
     """Start the Moonraker integration driver."""
     logging.basicConfig(format="%(asctime)s %(levelname)-8s %(name)-12s %(message)s")
-    level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
+    level = os.getenv("UC_LOG_LEVEL", "INFO").upper()
     for name in LOGGERS:
         logging.getLogger(name).setLevel(level)
 

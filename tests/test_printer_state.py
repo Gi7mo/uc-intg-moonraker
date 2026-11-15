@@ -1,7 +1,7 @@
 """Tests for the pure printer state helpers and constants."""
 
-import pytest
 import printer_state as ps
+import pytest
 from const import has_target, heater_label, is_heater, macro_command, make_identifier, slug
 from ucapi import media_player
 
@@ -18,6 +18,13 @@ def test_progress_prefers_slicer_m73():
     assert ps.compute_progress(status, metadata) == pytest.approx(0.21)
     status["display_status"]["progress"] = 0
     assert ps.compute_progress(status, metadata) == pytest.approx(0.0223, abs=1e-3)
+
+
+def test_progress_without_m73_uses_byte_range():
+    # Klipper reports the file progress as display_status.progress when there is no M73
+    status = {"display_status": {"progress": 0.05}, "virtual_sdcard": {"progress": 0.05, "file_position": 600}}
+    metadata = {"gcode_start_byte": 100, "gcode_end_byte": 1100}
+    assert ps.compute_progress(status, metadata) == pytest.approx(0.5)
 
 
 def test_progress_falls_back_to_sdcard_and_clamps():

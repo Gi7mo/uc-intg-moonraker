@@ -41,12 +41,14 @@ def compute_progress(status: dict[str, Any], metadata: dict[str, Any] | None) ->
     Prefers the slicer's progress (``M73``, reported as ``display_status.progress``):
     it is time based, while the file position lags badly in slow first layers.
     Otherwise uses the gcode byte range from the file metadata (ignoring the
-    slicer header and footer), then ``virtual_sdcard.progress``.
+    slicer header and footer), then ``virtual_sdcard.progress``. Without ``M73``,
+    Klipper reports the file progress as ``display_status.progress``, so a value
+    equal to ``virtual_sdcard.progress`` is not taken as slicer progress.
     """
-    slicer = status.get("display_status", {}).get("progress")
-    if slicer:
-        return _clamp(slicer)
     sdcard = status.get("virtual_sdcard", {})
+    slicer = status.get("display_status", {}).get("progress")
+    if slicer and slicer != sdcard.get("progress"):
+        return _clamp(slicer)
     position = sdcard.get("file_position")
     if metadata and position:
         start = metadata.get("gcode_start_byte")
@@ -56,9 +58,7 @@ def compute_progress(status: dict[str, Any], metadata: dict[str, Any] | None) ->
     return _clamp(sdcard.get("progress") or 0.0)
 
 
-def interpolate_progress(
-    progress: float, since_step: float, estimated_time: float | None, step: float = 0.01
-) -> float:
+def interpolate_progress(progress: float, since_step: float, estimated_time: float | None, step: float = 0.01) -> float:
     """
     Advance a coarse progress value by the time spent since it last changed.
 
@@ -74,9 +74,7 @@ def interpolate_progress(
     return min(progress + since_step / estimated_time, progress + step * 0.99, 1.0)
 
 
-def compute_remaining(
-    print_duration: float, progress: float, estimated_time: float | None
-) -> float | None:
+def compute_remaining(print_duration: float, progress: float, estimated_time: float | None) -> float | None:
     """
     Return the estimated remaining print time in seconds.
 
@@ -129,9 +127,7 @@ def format_duration(seconds: float | None) -> str:
     return f"{secs}s"
 
 
-def format_temperature(
-    obj_name: str, obj_status: dict[str, Any] | None, current: int | None = None
-) -> str:
+def format_temperature(obj_name: str, obj_status: dict[str, Any] | None, current: int | None = None) -> str:
     """
     Format a heater as ``215 / 220 °C`` or a passive sensor as ``45 °C``.
 
@@ -176,9 +172,7 @@ def pick_thumbnail(metadata: dict[str, Any] | None, max_size: int = 420) -> str 
         return None
     fitting = [t for t in candidates if t.get("width", 0) <= max_size]
     pool = fitting or candidates
-    best = max(pool, key=lambda t: t.get("width", 0)) if fitting else min(
-        pool, key=lambda t: t.get("width", 0)
-    )
+    best = max(pool, key=lambda t: t.get("width", 0)) if fitting else min(pool, key=lambda t: t.get("width", 0))
     return best["relative_path"]
 
 

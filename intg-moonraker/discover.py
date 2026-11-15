@@ -13,6 +13,7 @@ from typing import Any
 from const import DEFAULT_PORT, make_identifier
 from ucapi_framework import DiscoveredDevice
 from ucapi_framework.discovery import MDNSDiscovery
+from zeroconf import IPVersion
 
 _LOG = logging.getLogger(__name__)
 
@@ -24,7 +25,8 @@ class MoonrakerDiscovery(MDNSDiscovery):
 
     def parse_mdns_service(self, service_info: Any) -> DiscoveredDevice | None:
         """Turn a zeroconf service info into a discovered printer."""
-        addresses = service_info.parsed_addresses()
+        # IPv6 addresses would need brackets in the Moonraker URLs; printers have IPv4 anyway.
+        addresses = service_info.parsed_addresses(IPVersion.V4Only)
         if not addresses:
             return None
         address = addresses[0]

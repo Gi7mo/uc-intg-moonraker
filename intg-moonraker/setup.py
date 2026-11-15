@@ -50,6 +50,7 @@ class MoonrakerSetupFlow(BaseSetupFlow[PrinterConfig]):
         super().__init__(*args, **kwargs)
         self._heaters: list[str] = []
         self._macros: list[str] = []
+        self._connection: dict[str, Any] = {}
 
     def get_manual_entry_form(self) -> RequestUserInput:
         """Return the connection form, pre-filled when updating a printer."""
@@ -114,9 +115,7 @@ class MoonrakerSetupFlow(BaseSetupFlow[PrinterConfig]):
             "ssl": False,
         }
 
-    async def query_device(
-        self, input_values: dict[str, Any]
-    ) -> PrinterConfig | SetupError | RequestUserInput:
+    async def query_device(self, input_values: dict[str, Any]) -> PrinterConfig | SetupError | RequestUserInput:
         """Verify the connection and read available heaters and macros."""
         host = str(input_values.get("host", "")).strip()
         if not host:
@@ -148,6 +147,7 @@ class MoonrakerSetupFlow(BaseSetupFlow[PrinterConfig]):
             self._macros = list(existing.macros)
 
         name = str(input_values.get("name", "")).strip() or info["hostname"] or host
+        self._connection = {"name": name, "host": host, "port": port, "api_key": api_key, "ssl": ssl}
         return PrinterConfig(
             identifier=existing.identifier if existing else make_identifier(host, port),
             name=name,
@@ -217,17 +217,17 @@ class MoonrakerSetupFlow(BaseSetupFlow[PrinterConfig]):
         """Store the selected heaters, macros and camera interval."""
         config = self._pending_device_config
         values = msg.input_values
+        # The remote resends the first page's raw fields, which the framework copies onto
+        # the pending config; keep the normalized connection values from query_device.
+        for attr, value in self._connection.items():
+            setattr(config, attr, value)
         try:
             interval = int(float(values.get("cam_interval", DEFAULT_CAM_INTERVAL)))
         except ValueError:
             interval = DEFAULT_CAM_INTERVAL
         config.cam_interval = max(MIN_CAM_INTERVAL, min(MAX_CAM_INTERVAL, interval))
-        config.heaters = [
-            h for i, h in enumerate(self._heaters) if to_bool(values.get(f"heater_{i}"))
-        ]
-        config.macros = [
-            m for i, m in enumerate(self._macros) if to_bool(values.get(f"macro_{i}"))
-        ]
+        config.heaters = [h for i, h in enumerate(self._heaters) if to_bool(values.get(f"heater_{i}"))]
+        config.macros = [m for i, m in enumerate(self._macros) if to_bool(values.get(f"macro_{i}"))]
         _LOG.info(
             "Printer %s: heaters=%s macros=%s camera every %ss",
             config.name,

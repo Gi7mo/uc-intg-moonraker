@@ -25,7 +25,7 @@ import camera
 import printer_state
 from camera import Webcam
 from confirm import ConfirmGuard
-from const import MACRO_PREFIX, Commands, PrinterConfig, is_heater
+from const import MACRO_NAME, MACRO_PREFIX, Commands, PrinterConfig, is_heater
 from ucapi import EntityTypes
 from ucapi_framework import BaseConfigManager, WebSocketDevice, create_entity_id
 from ucapi_framework.helpers import MediaPlayerAttributes
@@ -37,6 +37,8 @@ RPC_TIMEOUT = 10
 COMMAND_TIMEOUT = 120
 PUSH_DELAY = 0.5
 """Coalesce bursts of status updates (Klipper reports ~4x per second)."""
+METADATA_RETRY = 30
+"""Seconds before loading file metadata again after a failure."""
 
 
 class MoonrakerError(Exception):
@@ -76,6 +78,7 @@ class MoonrakerDevice(WebSocketDevice):
         self._available_macros: dict[str, str] = {}
         self._metadata: dict[str, Any] | None = None
         self._metadata_file: str | None = None
+        self._metadata_failed_at: float | None = None
         self._thumbnail: str | None = None
         self._webcams: list[Webcam] = []
         self._cam_index = 0
@@ -134,10 +137,7 @@ class MoonrakerDevice(WebSocketDevice):
     @property
     def is_active(self) -> bool:
         """Return True while a print is running or paused."""
-        return (
-            self._klippy_state == "ready"
-            and self.print_state in printer_state.ACTIVE_STATES
-        )
+        return self._klippy_state == "ready" and self.print_state in printer_state.ACTIVE_STATES
 
     @property
     def filename(self) -> str:
@@ -171,12 +171,8 @@ class MoonrakerDevice(WebSocketDevice):
         progress = self.progress
         if progress != self._progress_step[0]:
             self._progress_step = (progress, self.print_duration)
-        progress = printer_state.interpolate_progress(
-            progress, self.print_duration - self._progress_step[1], estimate
-        )
-        remaining = printer_state.compute_remaining(
-            self.print_duration, progress, estimate
-        )
+        progress = printer_state.interpolate_progress(progress, self.print_duration - self._progress_step[1], estimate)
+        remaining = printer_state.compute_remaining(self.print_duration, progress, estimate)
         # Whole minutes, so the summary and the progress bar show the same time.
         return None if remaining is None else round(remaining / 60) * 60
 
@@ -202,9 +198,7 @@ class MoonrakerDevice(WebSocketDevice):
     @property
     def status_text(self) -> str:
         """Return the state label, or the confirmation hint while one is armed."""
-        return self.confirm.hint or printer_state.state_label(
-            self._klippy_state, self.print_state
-        )
+        return self.confirm.hint or printer_state.state_label(self._klippy_state, self.print_state)
 
     @property
     def summary(self) -> str:
@@ -243,9 +237,7 @@ class MoonrakerDevice(WebSocketDevice):
         status = self._status.get(obj_name)
         current = None
         if status and status.get("temperature") is not None:
-            current = printer_state.stable_round(
-                status["temperature"], self._shown_temps.get(obj_name)
-            )
+            current = printer_state.stable_round(status["temperature"], self._shown_temps.get(obj_name))
             self._shown_temps[obj_name] = current
         return printer_state.format_temperature(obj_name, status, current)
 
@@ -295,10 +287,15 @@ class MoonrakerDevice(WebSocketDevice):
         """Open the Moonraker websocket and start the initial handshake."""
         scheme = "wss" if self.config.ssl else "ws"
         url = f"{scheme}://{self.config.host}:{self.config.port}/websocket"
-        self._session = aiohttp.ClientSession(headers=self._headers())
+        # No default headers: the session also fetches webcam snapshots from other hosts,
+        # which must not receive the API key.
+        self._session = aiohttp.ClientSession()
         try:
             ws = await self._session.ws_connect(
-                url, heartbeat=30, timeout=aiohttp.ClientWSTimeout(ws_close=10)
+                url,
+                headers=self._headers(),
+                heartbeat=30,
+                timeout=aiohttp.ClientWSTimeout(ws_close=10),
             )
         except Exception:
             await self._session.close()
@@ -318,14 +315,21 @@ class MoonrakerDevice(WebSocketDevice):
         for future in self._pending.values():
             if not future.done():
                 future.set_exception(ConnectionError("Connection closed"))
+                future.exception()  # mark retrieved: callers being cancelled never read it
         self._pending.clear()
+        if self._push_handle is not None:
+            self._push_handle.cancel()
+            self._push_handle = None
         self._klippy_state = None
         self._camera_image = None
+        self._metadata_file = None
         if self._ws is not None:
             await self._ws.close()
         if self._session is not None:
             await self._session.close()
             self._session = None
+        # The base class reports nothing for a clean close; don't leave entities on the last state.
+        self.push_update()
 
     async def receive_message(self) -> dict[str, Any] | None:
         """Return the next JSON-RPC message, None when the socket closed."""
@@ -371,9 +375,7 @@ class MoonrakerDevice(WebSocketDevice):
             case "notify_webcams_changed":
                 self._spawn(self._load_webcams())
 
-    async def call(
-        self, method: str, params: dict[str, Any] | None = None, timeout: float = RPC_TIMEOUT
-    ) -> Any:
+    async def call(self, method: str, params: dict[str, Any] | None = None, timeout: float = RPC_TIMEOUT) -> Any:
         """Send a JSON-RPC request and return its result."""
         if self._ws is None or self._ws.closed:
             raise ConnectionError("Not connected to Moonraker")
@@ -381,9 +383,7 @@ class MoonrakerDevice(WebSocketDevice):
         future = asyncio.get_running_loop().create_future()
         self._pending[msg_id] = future
         try:
-            await self._ws.send_json(
-                {"jsonrpc": "2.0", "method": method, "params": params or {}, "id": msg_id}
-            )
+            await self._ws.send_json({"jsonrpc": "2.0", "method": method, "params": params or {}, "id": msg_id})
             return await asyncio.wait_for(future, timeout)
         finally:
             self._pending.pop(msg_id, None)
@@ -407,8 +407,6 @@ class MoonrakerDevice(WebSocketDevice):
                 await self._subscribe()
             else:
                 self._set_klippy_state(server.get("klippy_state") or "disconnected")
-        except asyncio.CancelledError:
-            raise
         except ConnectionError as err:
             _LOG.debug("[%s] Connection closed during initialization: %s", self.log_id, err)
         except Exception as err:  # pylint: disable=broad-exception-caught
@@ -451,9 +449,17 @@ class MoonrakerDevice(WebSocketDevice):
         webhooks = update.get("webhooks", {})
         if "state" in webhooks:
             self._klippy_state = webhooks["state"]
-        if self.filename != (self._metadata_file or ""):
-            self._spawn(self._refresh_metadata())
+        if self.filename != (self._metadata_file or "") or self._metadata_retry_due():
+            self._spawn(self._refresh_metadata(), "Metadata refresh")
         self._after_status_change()
+
+    def _metadata_retry_due(self) -> bool:
+        failed_at = self._metadata_failed_at
+        if failed_at is None or time.monotonic() - failed_at < METADATA_RETRY:
+            return False
+        self._metadata_failed_at = None
+        self._metadata_file = None
+        return True
 
     def _set_klippy_state(self, state: str) -> None:
         self._klippy_state = state
@@ -468,23 +474,21 @@ class MoonrakerDevice(WebSocketDevice):
 
     def _schedule_push(self) -> None:
         if self._push_handle is None:
-            self._push_handle = asyncio.get_running_loop().call_later(
-                PUSH_DELAY, self._delayed_push
-            )
+            self._push_handle = asyncio.get_running_loop().call_later(PUSH_DELAY, self._delayed_push)
 
     def _delayed_push(self) -> None:
         self._push_handle = None
         self.push_update()
 
-    def _spawn(self, coro) -> None:
-        task = asyncio.create_task(coro)
+    def _spawn(self, coro, name: str | None = None) -> None:
+        task = asyncio.create_task(coro, name=name)
         self._tasks.add(task)
         task.add_done_callback(self._task_done)
 
     def _task_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)
         if not task.cancelled() and task.exception():
-            _LOG.warning("[%s] Background task failed: %s", self.log_id, task.exception())
+            _LOG.warning("[%s] %s failed: %r", self.log_id, task.get_name(), task.exception())
 
     # =========================================================================
     # Metadata, thumbnails and camera
@@ -496,24 +500,34 @@ class MoonrakerDevice(WebSocketDevice):
         if filename == self._metadata_file:
             return
         self._metadata_file = filename
+        self._metadata_failed_at = None
         self._metadata = None
         self._thumbnail = None
         if not filename:
             return
         try:
-            self._metadata = await self.call("server.files.metadata", {"filename": filename})
-        except (MoonrakerError, asyncio.TimeoutError) as err:
+            metadata = await self.call("server.files.metadata", {"filename": filename})
+        except (MoonrakerError, asyncio.TimeoutError, ConnectionError) as err:
             _LOG.debug("[%s] No metadata for %s: %s", self.log_id, filename, err)
+            if self._metadata_file == filename:
+                self._metadata_failed_at = time.monotonic()
             return
+        if self._metadata_file != filename:
+            return  # the file changed while loading
+        self._metadata = metadata
         thumb = printer_state.pick_thumbnail(self._metadata, camera.MAX_SIZE)
         if thumb and self._session is not None:
             folder = os.path.dirname(filename)
             path = quote(os.path.join(folder, thumb) if folder else thumb)
             try:
                 raw = await camera.fetch_image(
-                    self._session, f"{self.base_url}/server/files/gcodes/{path}"
+                    self._session,
+                    f"{self.base_url}/server/files/gcodes/{path}",
+                    headers=self._headers(),
                 )
-                self._thumbnail = await camera.to_artwork(raw)
+                thumbnail = await camera.to_artwork(raw)
+                if self._metadata_file == filename:
+                    self._thumbnail = thumbnail
             except Exception as err:  # pylint: disable=broad-exception-caught
                 _LOG.debug("[%s] Thumbnail failed: %s", self.log_id, err)
         self.push_update()
@@ -524,11 +538,7 @@ class MoonrakerDevice(WebSocketDevice):
         except (MoonrakerError, asyncio.TimeoutError) as err:
             _LOG.debug("[%s] Webcam list unavailable: %s", self.log_id, err)
             return
-        self._webcams = [
-            cam
-            for data in result.get("webcams", [])
-            if (cam := Webcam.from_moonraker(data)) is not None
-        ]
+        self._webcams = [cam for data in result.get("webcams", []) if (cam := Webcam.from_moonraker(data)) is not None]
         _LOG.debug("[%s] Webcams: %s", self.log_id, [w.name for w in self._webcams])
         self._after_status_change(immediate=True)
 
@@ -540,12 +550,7 @@ class MoonrakerDevice(WebSocketDevice):
         return self.driver.api.configured_entities.contains(entity_id)
 
     def _update_camera_loop(self) -> None:
-        wanted = (
-            self.is_connected
-            and self.is_active
-            and self.current_webcam is not None
-            and self._artwork_wanted()
-        )
+        wanted = self.is_connected and self.is_active and self.current_webcam is not None and self._artwork_wanted()
         running = self._camera_task is not None and not self._camera_task.done()
         if wanted and not running:
             self._camera_task = asyncio.create_task(self._camera_loop())
@@ -566,12 +571,10 @@ class MoonrakerDevice(WebSocketDevice):
                 self._camera_image = await camera.to_artwork(raw, cam)
                 failures = 0
                 self.push_update()
-            except asyncio.CancelledError:
-                raise
             except Exception as err:  # pylint: disable=broad-exception-caught
                 failures += 1
                 log = _LOG.warning if failures == 1 else _LOG.debug
-                log("[%s] Snapshot from %s failed: %s", self.log_id, url, err)
+                log("[%s] Snapshot from %s failed: %s", self.log_id, camera.redact_url(url), err)
             await asyncio.sleep(max(1, int(self.config.cam_interval)))
 
     def _switch_camera(self, index: int) -> None:
@@ -597,11 +600,9 @@ class MoonrakerDevice(WebSocketDevice):
         """Send a printer command without blocking the remote on its completion."""
         self._require_connection()
         _LOG.info("[%s] %s %s", self.log_id, method, params or "")
-        self._spawn(self.call(method, params, timeout=COMMAND_TIMEOUT))
+        self._spawn(self.call(method, params, timeout=COMMAND_TIMEOUT), method)
 
-    def _guarded(
-        self, key: str, label: str, method: str, params: dict[str, Any] | None = None
-    ) -> bool:
+    def _guarded(self, key: str, label: str, method: str, params: dict[str, Any] | None = None) -> bool:
         """Run a command on the second press within the confirm window."""
         self._require_connection()
         if not self.confirm.press(key, label):
@@ -633,7 +634,10 @@ class MoonrakerDevice(WebSocketDevice):
 
     async def run_macro(self, macro: str) -> bool:
         """Run a gcode macro (double press)."""
-        name = self._available_macros.get(macro.lower(), macro)
+        name = self._available_macros.get(macro.lower())
+        if name is None or not MACRO_NAME.fullmatch(name):
+            _LOG.warning("[%s] Macro %r not available", self.log_id, macro)
+            return False
         return self._guarded(f"macro:{name}", name, "printer.gcode.script", {"script": name})
 
     async def execute(self, command: str) -> None:
@@ -679,9 +683,7 @@ class MoonrakerDevice(WebSocketDevice):
     # =========================================================================
 
     @classmethod
-    async def probe(
-        cls, host: str, port: int, api_key: str = "", ssl: bool = False
-    ) -> dict[str, Any]:
+    async def probe(cls, host: str, port: int, api_key: str = "", ssl: bool = False) -> dict[str, Any]:
         """
         Query a Moonraker instance over HTTP for the setup flow.
 
@@ -714,9 +716,7 @@ class MoonrakerDevice(WebSocketDevice):
             "hostname": hostname,
             "klippy_state": server.get("klippy_state"),
             "heaters": [obj for obj in objects if is_heater(obj)],
-            "macros": sorted(
-                obj[len(MACRO_PREFIX) :] for obj in objects if obj.startswith(MACRO_PREFIX)
-            ),
+            "macros": sorted(obj[len(MACRO_PREFIX) :] for obj in objects if obj.startswith(MACRO_PREFIX)),
         }
 
 

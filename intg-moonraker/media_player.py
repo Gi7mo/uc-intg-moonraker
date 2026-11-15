@@ -60,6 +60,7 @@ class PrinterMediaPlayer(MediaPlayerEntity):
                 Attributes.MEDIA_IMAGE_URL: camera.placeholder_artwork(),
                 Attributes.MEDIA_POSITION: 0,
                 Attributes.MEDIA_DURATION: 0,
+                Attributes.MEDIA_POSITION_UPDATED_AT: "",
                 Attributes.SOURCE: "",
                 Attributes.SOURCE_LIST: [],
             },

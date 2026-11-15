@@ -2,8 +2,9 @@
 
 import asyncio
 
+import device as device_module
 import pytest
-from const import Commands, PrinterConfig
+from const import CONFIRM_MIN_GAP, Commands, PrinterConfig
 from device import MoonrakerDevice
 from fake_moonraker import FakeMoonraker
 from ucapi import media_player
@@ -139,6 +140,7 @@ async def test_guarded_commands_need_double_press(server, device):
         assert all(m != method for m, _ in server.calls)
         assert "again to confirm" in device.status_text
         assert "again to confirm" in device.get_media_player_attributes().MEDIA_ARTIST
+        await asyncio.sleep(CONFIRM_MIN_GAP)
         await device.execute(command)
         await wait_for(lambda m=method: any(c == m for c, _ in server.calls))
         assert device.confirm.hint == ""
@@ -146,6 +148,7 @@ async def test_guarded_commands_need_double_press(server, device):
 
 async def test_macro_double_press_uses_klipper_case(server, device):
     assert await device.run_macro("load_filament") is False
+    await asyncio.sleep(CONFIRM_MIN_GAP)
     assert await device.run_macro("load_filament") is True
     await wait_for(lambda: ("printer.gcode.script", {"script": "LOAD_FILAMENT"}) in server.calls)
 
@@ -206,6 +209,9 @@ async def test_api_key_is_sent():
         await dev.connect()
         await asyncio.wait_for(fake.subscribed.wait(), 3)
         assert fake.calls[0][1]["api_key"] == "secret"
+        await wait_for(lambda: fake.thumbnail_requests and fake.snapshot_requests)
+        # snapshots can live on other hosts and must not receive the key
+        assert set(fake.snapshot_api_keys) == {None}
         await dev.disconnect()
     finally:
         await fake.stop()
@@ -223,3 +229,33 @@ async def test_layer_after_completion(server, device):
     await server.push_status({"print_stats": {"state": "standby"}})
     await wait_for(lambda: device.print_state == "standby")
     assert device.layer_text == ""
+
+
+async def test_metadata_retried_after_failure(server, device, monkeypatch):
+    monkeypatch.setattr(device_module, "METADATA_RETRY", 0)
+    server.metadata_fails = 1
+    await server.push_status({"print_stats": {"filename": "other.gcode"}})
+    await wait_for(lambda: device._metadata_file == "other.gcode" and device._metadata_failed_at)
+    await server.push_status({"print_stats": {"filename": "parts/benchy.gcode"}})
+    await wait_for(lambda: device._metadata is not None)
+    server.metadata_fails = 1
+    device._metadata_file = None
+    await server.push_status({"print_stats": {"print_duration": 601.0}})
+    await wait_for(lambda: device._metadata_failed_at is not None)
+    assert device._metadata is None
+    await server.push_status({"print_stats": {"print_duration": 602.0}})
+    await wait_for(lambda: device._metadata is not None and device._metadata_failed_at is None)
+
+
+async def test_disconnect_pushes_state(device):
+    pushed = []
+    device.push_update = lambda: pushed.append(device.klippy_state)
+    await device.close_websocket()
+    assert pushed and pushed[-1] is None
+
+
+async def test_unknown_macro_is_not_sent(server, device):
+    for _ in range(2):
+        assert await device.run_macro("MISSING_MACRO") is False
+        await asyncio.sleep(CONFIRM_MIN_GAP)
+    assert all(m != "printer.gcode.script" for m, _ in server.calls)
