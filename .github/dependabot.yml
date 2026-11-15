@@ -12,3 +12,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Stay on the Python version of the remote's runtime (r2-pyinstaller 3.11)
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
