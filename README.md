@@ -1,5 +1,8 @@
 # Moonraker (Klipper) integration for Unfolded Circle Remote 3 / Remote Two
 
+[![CI](https://github.com/Gi7mo/uc-intg-moonraker/actions/workflows/release.yml/badge.svg)](https://github.com/Gi7mo/uc-intg-moonraker/actions/workflows/release.yml)
+[![Release](https://img.shields.io/github/v/release/Gi7mo/uc-intg-moonraker)](https://github.com/Gi7mo/uc-intg-moonraker/releases)
+
 Monitor and control Klipper 3D printers through [Moonraker](https://moonraker.readthedocs.io/)
 from your Unfolded Circle remote: webcam, print progress, temperatures, pause / resume,
 cancel, emergency stop, firmware restart and your own Klipper macros.
