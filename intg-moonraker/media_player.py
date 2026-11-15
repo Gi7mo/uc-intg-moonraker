@@ -36,6 +36,7 @@ FEATURES = [
     media_player.Features.MEDIA_IMAGE_URL,
     media_player.Features.MEDIA_POSITION,
     media_player.Features.MEDIA_DURATION,
+    media_player.Features.MEDIA_TYPE,
 ]
 
 
@@ -64,17 +65,17 @@ class PrinterMediaPlayer(MediaPlayerEntity):
                 Attributes.SOURCE: "",
                 Attributes.SOURCE_LIST: [],
             },
-            device_class=DeviceClasses.STREAMING_BOX,
+            device_class=DeviceClasses.TV,
             cmd_handler=self.handle_command,
         )
         self.subscribe_to_device(device)
 
-    async def sync_state(self) -> None:
+    async def sync_state(self, force: bool = False) -> None:
         """Push the current print view to the remote."""
         if not self._device.is_connected:
             self.set_unavailable()
             return
-        self.update(self._device.get_media_player_attributes())
+        self.update(self._device.get_media_player_attributes(), force=force)
 
     async def handle_command(
         self,

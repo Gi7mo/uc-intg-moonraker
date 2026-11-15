@@ -67,12 +67,12 @@ class PrinterRemote(RemoteEntity):
         )
         self.subscribe_to_device(device)
 
-    async def sync_state(self) -> None:
+    async def sync_state(self, force: bool = False) -> None:
         """Remote is ON while Moonraker is connected."""
         if not self._device.is_connected:
             self.set_unavailable()
             return
-        self.update({remote.Attributes.STATE: remote.States.ON})
+        self.update({remote.Attributes.STATE: remote.States.ON}, force=force)
 
     async def handle_command(
         self,

@@ -50,7 +50,7 @@ class PrinterButton(ButtonEntity):
         )
         self.subscribe_to_device(device)
 
-    async def sync_state(self) -> None:
+    async def sync_state(self, force: bool = False) -> None:
         """Mark the button unavailable while disconnected or its macro is missing."""
         available = self._device.is_connected and (
             self._macro is None
@@ -62,7 +62,8 @@ class PrinterButton(ButtonEntity):
                 button.Attributes.STATE: (
                     button.States.AVAILABLE if available else button.States.UNAVAILABLE
                 )
-            }
+            },
+            force=force,
         )
 
     async def handle_command(

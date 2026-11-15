@@ -16,6 +16,7 @@ import logging
 import os
 import time
 from asyncio import AbstractEventLoop
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
@@ -80,6 +81,7 @@ class MoonrakerDevice(WebSocketDevice):
         self._cam_index = 0
         self._camera_image: str | None = None
         self._shown_temps: dict[str, int] = {}
+        self._position_stamp: tuple[int, str] = (-1, "")
 
         self.confirm = ConfirmGuard(self.push_update)
 
@@ -249,6 +251,10 @@ class MoonrakerDevice(WebSocketDevice):
         elif self.print_state == "complete":
             position = duration = int(self.print_duration)
 
+        # Like other media players, report when the position was last valid.
+        if position != self._position_stamp[0]:
+            self._position_stamp = (position, datetime.now(timezone.utc).isoformat())
+
         cam = self.current_webcam
         return MediaPlayerAttributes(
             STATE=printer_state.media_state(self._klippy_state, self.print_state),
@@ -258,6 +264,8 @@ class MoonrakerDevice(WebSocketDevice):
             MEDIA_IMAGE_URL=self.artwork,
             MEDIA_POSITION=position,
             MEDIA_DURATION=duration,
+            MEDIA_POSITION_UPDATED_AT=self._position_stamp[1],
+            MEDIA_TYPE="video",
             SOURCE=cam.name if cam else "",
             SOURCE_LIST=[w.name for w in self._webcams],
         )

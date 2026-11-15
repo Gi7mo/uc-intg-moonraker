@@ -70,7 +70,7 @@ class PrinterSensor(SensorEntity):
         )
         self.subscribe_to_device(device)
 
-    async def sync_state(self) -> None:
+    async def sync_state(self, force: bool = False) -> None:
         """Push the current value to the remote."""
         if not self._device.is_connected:
             self.set_unavailable()
@@ -79,7 +79,8 @@ class PrinterSensor(SensorEntity):
             {
                 sensor.Attributes.STATE: sensor.States.ON,
                 sensor.Attributes.VALUE: self._value(self._device),
-            }
+            },
+            force=force,
         )
 
 

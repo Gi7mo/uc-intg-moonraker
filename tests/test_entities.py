@@ -7,13 +7,13 @@ import ucapi
 from button import create_buttons
 from const import Commands, PrinterConfig, macro_command
 from device import MoonrakerDevice
+from driver import MoonrakerDriver
 from fake_moonraker import FakeMoonraker
 from media_player import PrinterMediaPlayer
 from remote import PrinterRemote, build_pages
 from sensor import create_sensors
 from test_device import wait_for
 from ucapi import button, media_player, remote, sensor
-from ucapi_framework import BaseIntegrationDriver
 
 ENTITY_CLASSES = [PrinterMediaPlayer, PrinterRemote, create_sensors, create_buttons]
 
@@ -31,7 +31,7 @@ async def setup():
         heaters=["extruder", "temperature_sensor chamber"],
         macros=["LOAD_FILAMENT", "MISSING_MACRO"],
     )
-    driver = BaseIntegrationDriver(device_class=MoonrakerDevice, entity_classes=ENTITY_CLASSES)
+    driver = MoonrakerDriver(device_class=MoonrakerDevice, entity_classes=ENTITY_CLASSES)
     device = MoonrakerDevice(config, driver=driver)
     entities = {e.id: e for e in driver.create_entities(config, device)}
     for entity in entities.values():
@@ -106,6 +106,26 @@ async def test_entities_follow_device_state(setup):
     await wait_for(
         lambda: attrs(driver, "sensor.voron_7125.temp_extruder")[sensor.Attributes.VALUE] == "230 / 240 °C"
     )
+
+
+async def test_refresh_resends_unchanged_state(setup, monkeypatch):
+    """Regression: an entity removed and added again on the remote needs its full state."""
+    fake, device, _, driver = setup
+    await device.connect()
+    await asyncio.wait_for(fake.subscribed.wait(), 3)
+    await wait_for(
+        lambda: attrs(driver, "media_player.voron_7125").get(media_player.Attributes.MEDIA_TITLE) == "benchy.gcode"
+    )
+
+    sent = {}
+    monkeypatch.setattr(driver.api.configured_entities, "update_attributes", lambda eid, a: sent.update({eid: a}))
+    for entity_id in ("media_player.voron_7125", "sensor.voron_7125.file", "remote.voron_7125"):
+        await driver.refresh_entity_state(entity_id)
+
+    assert sent["media_player.voron_7125"][media_player.Attributes.MEDIA_TITLE] == "benchy.gcode"
+    assert sent["media_player.voron_7125"][media_player.Attributes.STATE] == media_player.States.PLAYING
+    assert sent["sensor.voron_7125.file"][sensor.Attributes.VALUE] == "benchy.gcode"
+    assert sent["remote.voron_7125"][remote.Attributes.STATE] == remote.States.ON
 
 
 async def test_commands_through_entities(setup):

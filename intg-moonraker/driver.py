@@ -11,13 +11,13 @@ import asyncio
 import logging
 import os
 
-from button import create_buttons
+from button import PrinterButton, create_buttons
 from const import PrinterConfig
 from device import MoonrakerDevice
 from discover import SERVICE_TYPE, MoonrakerDiscovery
 from media_player import PrinterMediaPlayer
 from remote import PrinterRemote
-from sensor import create_sensors
+from sensor import PrinterSensor, create_sensors
 from setup import MoonrakerSetupFlow
 from ucapi_framework import BaseConfigManager, BaseIntegrationDriver, get_config_path
 
@@ -34,6 +34,24 @@ LOGGERS = (
 )
 
 
+class MoonrakerDriver(BaseIntegrationDriver):
+    """Integration driver that sends the full entity state on subscription."""
+
+    async def refresh_entity_state(self, entity_id: str) -> None:
+        """
+        Send all attributes, not only the changed ones.
+
+        The remote drops the state of an entity that is removed and added again,
+        while the driver still holds the old values: a regular (changes only)
+        update would never resend the unchanged title, state or artwork.
+        """
+        entity = self.api.configured_entities.get(entity_id)
+        if isinstance(entity, (PrinterMediaPlayer, PrinterRemote, PrinterSensor, PrinterButton)):
+            await entity.sync_state(force=True)
+            return
+        await super().refresh_entity_state(entity_id)
+
+
 async def main():
     """Start the Moonraker integration driver."""
     logging.basicConfig(format="%(asctime)s %(levelname)-8s %(name)-12s %(message)s")
@@ -41,7 +59,7 @@ async def main():
     for name in LOGGERS:
         logging.getLogger(name).setLevel(level)
 
-    driver = BaseIntegrationDriver(
+    driver = MoonrakerDriver(
         device_class=MoonrakerDevice,
         entity_classes=[
             PrinterMediaPlayer,
