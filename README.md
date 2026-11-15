@@ -44,9 +44,9 @@ in the web configurator. As a result:
   [recommended layout](#recommended-activity-layout) below gets close.
 - Temperature sensors show text (`215 / 220 °C`), so the remote's automatic °C/°F
   conversion does not apply.
-- The print view needs remote UI **0.73.4 or newer** (Settings → About). Older UI versions
-  leave a media widget empty if its media player hasn't been loaded elsewhere yet, e.g. by
-  opening it once from the entity list.
+- Remote UI versions before **0.73.4** leave a media widget empty unless something else in
+  the activity loads the media player. Map a physical button of the activity to the media
+  player (see [below](#recommended-activity-layout)) and the widget works right away.
 
 ## Moonraker configuration
 
@@ -110,6 +110,11 @@ Create an activity (for example *"3D printer"*), add the printer's entities and 
 The remote entity *"<printer> Controls"* also brings two ready-made pages, *Control* and
 *Macros*, and every command as a simple command for physical button mapping.
 Suggested mapping: Play/Pause → `PAUSE_RESUME`, Next/Prev → `NEXT_CAMERA` / `PREVIOUS_CAMERA`.
+
+**Remote UI older than 0.73.4:** map at least one button of the activity to the *media
+player* itself, for example *Next* → `<printer>` media player → *Next* (switches the camera,
+harmless for the print). Without such a mapping these UI versions never load the media
+player and the widget stays empty.
 
 ## Entities
 
