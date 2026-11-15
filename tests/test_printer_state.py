@@ -40,6 +40,18 @@ def test_remaining_blends_slicer_and_progress():
     assert blended == pytest.approx(500 * 0.5 + 1000 * 0.5)
 
 
+def test_interpolate_progress_between_slicer_steps():
+    # 1 % of a 10000 s print is 100 s: after 50 s we are half way to the next step
+    assert ps.interpolate_progress(0.31, 50, 10000) == pytest.approx(0.315)
+    # never reaches the next step on its own
+    assert ps.interpolate_progress(0.31, 500, 10000) < 0.32
+    assert ps.interpolate_progress(0.31, 50, None) == 0.31
+    assert ps.interpolate_progress(0.31, 0, 10000) == 0.31
+    # the remaining time now counts down between steps
+    left = [ps.compute_remaining(4000 + t, ps.interpolate_progress(0.31, t, 10000), 10000) for t in (0, 30, 60)]
+    assert left[0] > left[1] > left[2]
+
+
 def test_remaining_without_slicer_estimate():
     assert ps.compute_remaining(0, 0.0, None) is None
     assert ps.compute_remaining(300, 0.5, None) == pytest.approx(300)

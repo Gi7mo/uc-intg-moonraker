@@ -56,6 +56,24 @@ def compute_progress(status: dict[str, Any], metadata: dict[str, Any] | None) ->
     return _clamp(sdcard.get("progress") or 0.0)
 
 
+def interpolate_progress(
+    progress: float, since_step: float, estimated_time: float | None, step: float = 0.01
+) -> float:
+    """
+    Advance a coarse progress value by the time spent since it last changed.
+
+    The slicer reports progress in whole percent, minutes apart on long prints.
+    Without interpolation the remaining time would only change in those steps.
+    The result stays below the next step so it never runs ahead of the printer.
+
+    :param since_step: print seconds since ``progress`` last changed
+    :param estimated_time: slicer estimate of the whole print in seconds
+    """
+    if not estimated_time or since_step <= 0:
+        return progress
+    return min(progress + since_step / estimated_time, progress + step * 0.99, 1.0)
+
+
 def compute_remaining(
     print_duration: float, progress: float, estimated_time: float | None
 ) -> float | None:

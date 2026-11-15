@@ -82,6 +82,7 @@ class MoonrakerDevice(WebSocketDevice):
         self._camera_image: str | None = None
         self._shown_temps: dict[str, int] = {}
         self._position_stamp: tuple[int, str] = (-1, "")
+        self._progress_step: tuple[float, float] = (-1.0, 0.0)
 
         self.confirm = ConfirmGuard(self.push_update)
 
@@ -167,8 +168,14 @@ class MoonrakerDevice(WebSocketDevice):
         if not self.is_active:
             return None
         estimate = (self._metadata or {}).get("estimated_time")
+        progress = self.progress
+        if progress != self._progress_step[0]:
+            self._progress_step = (progress, self.print_duration)
+        progress = printer_state.interpolate_progress(
+            progress, self.print_duration - self._progress_step[1], estimate
+        )
         remaining = printer_state.compute_remaining(
-            self.print_duration, self.progress, estimate
+            self.print_duration, progress, estimate
         )
         # Whole minutes, so the summary and the progress bar show the same time.
         return None if remaining is None else round(remaining / 60) * 60
