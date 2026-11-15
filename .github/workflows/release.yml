@@ -1,0 +1,186 @@
+# Runs on every push to main (i.e. every merged pull request): tests, then builds the
+# aarch64 tarball for the remote. If the merged pull request carries one of the labels
+# release:major, release:minor or release:patch, the version of the latest v* tag is bumped
+# accordingly, the Docker image is pushed (tags X.Y.Z, X.Y, X and latest) and a GitHub
+# release with the tarball is created.
+name: Build & Release
+
+"on":
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # Python version of the builder image, see https://hub.docker.com/r/unfoldedcircle/r2-pyinstaller
+  PYTHON_VER: 3.11.12-0.3.0
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    name: Determine version
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      minor: ${{ steps.version.outputs.minor }}
+      major: ${{ steps.version.outputs.major }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bump version from pull request label
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            --jq '[.[] | select(.merged_at != null) | .labels[].name] | join(" ")')
+          bump=""
+          for level in major minor patch; do
+            if [[ " $labels " == *" release:$level "* ]]; then bump=$level; break; fi
+          done
+
+          last=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+          IFS=. read -r major minor patch <<< "${last:-v0.0.0}"
+          major=${major#v}
+          case "$bump" in
+            major) version="$((major + 1)).0.0" ;;
+            minor) version="$major.$((minor + 1)).0" ;;
+            patch) version="$major.$minor.$((patch + 1))" ;;
+            *) version="$major.$minor.$((patch + 1))-dev.$GITHUB_RUN_NUMBER" ;;
+          esac
+
+          echo "Labels: ${labels:-none}, last release: ${last:-none}, version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+          echo "major=${version%%.*}" >> "$GITHUB_OUTPUT"
+          echo "release=$([[ -n "$bump" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build aarch64 tarball
+    runs-on: ubuntu-24.04
+    needs: [test, version]
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - name: Build
+        run: |
+          docker run --rm --platform=linux/arm64 \
+            --user="$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE":/workspace \
+            "docker.io/unfoldedcircle/r2-pyinstaller:$PYTHON_VER" \
+            bash -c "cd /workspace && \
+              python -m pip install -r requirements.txt && \
+              pyinstaller --clean --onedir --name intg-moonraker --collect-all zeroconf intg-moonraker/driver.py"
+
+      - name: Package
+        run: |
+          mkdir -p artifacts/bin
+          mv dist/intg-moonraker/* artifacts/bin
+          mv artifacts/bin/intg-moonraker artifacts/bin/driver
+          jq --arg v "$VERSION" --arg d "$(date -u +%F)" '.version = $v | .release_date = $d' \
+            driver.json > artifacts/driver.json
+          echo "ARTIFACT_NAME=uc-intg-moonraker-$VERSION-aarch64" >> "$GITHUB_ENV"
+
+      - name: Create archive
+        run: tar czf "$ARTIFACT_NAME.tar.gz" -C artifacts .
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_NAME }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  docker:
+    name: Push Docker image
+    runs-on: ubuntu-24.04
+    needs: [version, build]
+    if: needs.version.outputs.release == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/uc-intg-moonraker
+          tags: |
+            type=raw,value=${{ needs.version.outputs.version }}
+            type=raw,value=${{ needs.version.outputs.minor }}
+            type=raw,value=${{ needs.version.outputs.major }}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  release:
+    name: Create release
+    runs-on: ubuntu-24.04
+    needs: [version, build, docker]
+    if: needs.version.outputs.release == 'true'
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          merge-multiple: true
+
+      - name: Create release
+        run: |
+          sha256sum ./*.tar.gz > moonraker.hash
+          gh release create "v$VERSION" ./*.tar.gz moonraker.hash \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "v$VERSION" --generate-notes

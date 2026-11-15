@@ -1,0 +1,11 @@
+# Categories for the generated release notes
+changelog:
+  categories:
+    - title: Breaking changes
+      labels: ["release:major"]
+    - title: New features
+      labels: [enhancement]
+    - title: Bug fixes
+      labels: [bug]
+    - title: Other changes
+      labels: ["*"]

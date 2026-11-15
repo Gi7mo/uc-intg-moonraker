@@ -1,0 +1,27 @@
+# Required status check: a pull request to main may carry at most one release label.
+# release:major / release:minor / release:patch release on merge, no label only builds.
+name: Release label
+
+"on":
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  check:
+    name: Release label
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check release labels
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          count=$(jq '[.[] | select(startswith("release:"))] | length' <<< "$LABELS")
+          names=$(jq -r '[.[] | select(startswith("release:"))] | join(", ")' <<< "$LABELS")
+          if [ "$count" -gt 1 ]; then
+            echo "::error::Only one release label allowed, found: $names"
+            exit 1
+          fi
+          echo "Release on merge: ${names:-none (build only)}" | tee -a "$GITHUB_STEP_SUMMARY"

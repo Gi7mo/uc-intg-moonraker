@@ -1,5 +1,5 @@
 # Development Dockerfile with nodemon for auto-reload
-FROM python:3.11-slim-bullseye
+FROM python:3.11-slim-bookworm
 WORKDIR /app
 
 # Install nodemon for auto-reload on file changes

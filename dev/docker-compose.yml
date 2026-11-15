@@ -1,5 +1,4 @@
 # Docker Compose for development with the UC Core Simulator
-version: '3.4'
 name: integration-moonraker
 
 services:
@@ -16,7 +15,7 @@ services:
     volumes:
       - simulator-data:/data
 
-  # Your integration service
+  # The integration, restarted on code changes
   intg-moonraker:
      build:
        context: ../

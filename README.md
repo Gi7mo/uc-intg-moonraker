@@ -27,7 +27,8 @@ Built on [ucapi-framework](https://github.com/JackJPowell/ucapi-framework) and
   - one button per selected Klipper macro.
 - **Safety**: cancel, emergency stop, firmware restart and macros run only on a
   **second press within 3 seconds**. After the first press the status shows
-  *"Press … again to confirm"*.
+  *"Press … again to confirm"*. Repeats faster than 0.4 s (a held key, or the same command
+  twice in one command sequence) don't count as the second press.
 - **Multiple printers**: add each printer via the integration setup.
 - **Live updates** via the Moonraker websocket (no polling), with automatic reconnect.
 - **Discovery** via mDNS when Moonraker's `[zeroconf]` is enabled; manual entry always works.
@@ -62,7 +63,8 @@ trusted_clients:
 ```
 
 **B) API key**: enter it during setup. You can read it in Mainsail/Fluidd or with
-`curl http://<printer>:7125/access/api_key` from a trusted machine.
+`curl http://<printer>:7125/access/api_key` from a trusted machine. Without *SSL* the key
+travels over the LAN unencrypted, see [SECURITY.md](SECURITY.md).
 
 Optional:
 
@@ -92,6 +94,11 @@ To add more printers, or to change settings later, open the integration →
 docker run -d --name uc-intg-moonraker --network host \
   -v $(pwd)/config:/config ghcr.io/gi7mo/uc-intg-moonraker:latest
 ```
+
+Images for `linux/amd64` and `linux/arm64` are published with every release. Pick the tag
+you want to follow: `latest`, a major version (`1`), a minor version (`1.2`) or an exact
+release (`1.2.3`). The container runs as an unprivileged user (uid 10001), so the config
+directory must be writable for it (`chown 10001 config`).
 
 The remote finds the integration via mDNS. Otherwise add it manually as
 `ws://<docker-host>:9090`.
@@ -137,7 +144,9 @@ Long macro names are shortened with a hash suffix to fit the 20-character limit.
 ```bash
 python3.11 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt -r test-requirements.txt
-python -m pytest            # unit and integration tests against a fake Moonraker
+python -m pytest --cov            # tests against a fake Moonraker, with coverage (min. 85 %)
+flake8 intg-moonraker tests && pylint intg-moonraker
+black intg-moonraker tests && isort intg-moonraker tests   # formatting, line length 120
 python intg-moonraker/driver.py   # run locally; config is stored in ./config
 ```
 
@@ -146,9 +155,29 @@ UC core simulator.
 
 ### Releasing
 
-1. Bump `version` in `driver.json` and `pyproject.toml`, and add a `CHANGELOG.md` entry.
-2. Push a tag `v<version>`. GitHub Actions builds the aarch64 tarball (PyInstaller) and the
-   Docker image, then creates the release.
+`main` only changes through pull requests. The *Tests* and *Release label* checks must pass
+before a pull request can be merged.
+
+Every merge to `main` runs the tests again and builds the aarch64 tarball. The tarball is
+attached to the workflow run as an artifact, so you can test it on a remote.
+
+To release, give the pull request one of these labels before merging:
+
+| Label | Effect (from `1.2.3`) |
+|-------|------------------------|
+| `release:patch` | `1.2.4`: bug fixes |
+| `release:minor` | `1.3.0`: new features |
+| `release:major` | `2.0.0`: breaking changes |
+
+The workflow then:
+
+- tags the merge commit `v<version>`;
+- writes the version into the packaged `driver.json`;
+- pushes the Docker image;
+- creates a GitHub release with the tarball and release notes generated from the merged
+  pull requests.
+
+Without a label, a merge only builds. At most one release label is allowed.
 
 ## License
 

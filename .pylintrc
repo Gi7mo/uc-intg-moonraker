@@ -22,7 +22,9 @@ disable=
     too-many-public-methods,
     missing-class-docstring,
     missing-function-docstring,
-    fixme # temporary
+    too-many-positional-arguments,
+    too-many-locals,
+    duplicate-code
 
 [STRING]
 

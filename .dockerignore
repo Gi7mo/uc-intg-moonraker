@@ -1,0 +1,6 @@
+# Only requirements.txt, driver.json and intg-moonraker/ are needed in the image
+*
+!requirements.txt
+!driver.json
+!intg-moonraker/
+intg-moonraker/__pycache__/
