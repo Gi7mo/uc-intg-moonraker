@@ -8,7 +8,7 @@ license = "MPL-2.0"
 
 dependencies = [
     "ucapi==0.7.0",
-    "ucapi-framework==1.9.8",
+    "ucapi-framework==1.9.9",
     "aiohttp>=3.10.11",
     "pillow>=10.3",
     "zeroconf>=0.132",
